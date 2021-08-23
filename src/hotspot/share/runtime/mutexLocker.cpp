@@ -320,7 +320,7 @@ void mutex_init() {
   }
 
 #if INCLUDE_JFR
-  def(JfrMsg_lock                  , PaddedMonitor, leaf,        true,  _safepoint_check_always);
+  def(JfrMsg_lock                  , PaddedMonitor, leaf-1,      true,  _safepoint_check_always); // -1 because the ConcurrentHashTable resize lock is leaf
   def(JfrBuffer_lock               , PaddedMutex  , leaf,        true,  _safepoint_check_never);
   def(JfrStream_lock               , PaddedMutex  , nonleaf + 1, false, _safepoint_check_never);
   def(JfrStacktrace_lock           , PaddedMutex  , tty-2,       true,  _safepoint_check_never);
