@@ -40,6 +40,9 @@
 #include "oops/oop.inline.hpp"
 #include "runtime/java.hpp"
 #include "runtime/nonJavaThread.hpp"
+#if INCLUDE_MANAGEMENT
+#include "services/finalizerTable.hpp"
+#endif
 
 ReferencePolicy* ReferenceProcessor::_always_clear_soft_ref_policy = NULL;
 ReferencePolicy* ReferenceProcessor::_default_soft_ref_policy      = NULL;
@@ -349,6 +352,18 @@ size_t ReferenceProcessor::process_soft_weak_final_refs_work(DiscoveredList&    
   return iter.removed();
 }
 
+#if INCLUDE_MANAGEMENT
+static void on_enqueue(const DiscoveredListIterator& iter) {
+  oop referent = iter.referent();
+  if (referent != NULL) {
+    assert(referent->is_instance(), "invariant");
+    const InstanceKlass* const ik = InstanceKlass::cast(referent->klass());
+    assert(ik->has_finalizer(), "invariant");
+    FinalizerTable::on_enqueue(ik);
+  }
+}
+#endif
+
 size_t ReferenceProcessor::process_final_keep_alive_work(DiscoveredList& refs_list,
                                                          OopClosure*     keep_alive,
                                                          VoidClosure*    complete_gc) {
@@ -361,8 +376,8 @@ size_t ReferenceProcessor::process_final_keep_alive_work(DiscoveredList& refs_li
     // Self-loop next, to mark the FinalReference not active.
     assert(java_lang_ref_Reference::next(iter.obj()) == NULL, "enqueued FinalReference");
     java_lang_ref_Reference::set_next_raw(iter.obj(), iter.obj());
-
     iter.enqueue();
+    MANAGEMENT_ONLY(on_enqueue(iter);)
     log_enqueued_ref(iter, "Final");
     iter.next();
   }
