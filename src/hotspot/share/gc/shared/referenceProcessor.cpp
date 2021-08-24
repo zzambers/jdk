@@ -41,7 +41,7 @@
 #include "runtime/java.hpp"
 #include "runtime/nonJavaThread.hpp"
 #if INCLUDE_MANAGEMENT
-#include "services/finalizerTable.hpp"
+#include "services/finalizerService.hpp"
 #endif
 
 ReferencePolicy* ReferenceProcessor::_always_clear_soft_ref_policy = NULL;
@@ -356,10 +356,7 @@ size_t ReferenceProcessor::process_soft_weak_final_refs_work(DiscoveredList&    
 static void on_enqueue(const DiscoveredListIterator& iter) {
   oop referent = iter.referent();
   if (referent != NULL) {
-    assert(referent->is_instance(), "invariant");
-    const InstanceKlass* const ik = InstanceKlass::cast(referent->klass());
-    assert(ik->has_finalizer(), "invariant");
-    FinalizerTable::on_enqueue(ik);
+    FinalizerService::on_enqueue(referent);
   }
 }
 #endif
