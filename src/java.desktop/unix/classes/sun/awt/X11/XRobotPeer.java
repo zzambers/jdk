@@ -36,6 +36,7 @@ import sun.awt.UNIXToolkit;
 import sun.awt.X11GraphicsConfig;
 import sun.awt.X11GraphicsDevice;
 import sun.security.action.GetPropertyAction;
+import sun.awt.X11.GnomeShellScreenshot;
 
 @SuppressWarnings("removal")
 final class XRobotPeer implements RobotPeer {
@@ -107,6 +108,14 @@ final class XRobotPeer implements RobotPeer {
     @Override
     public int [] getRGBPixels(Rectangle bounds) {
         int[] pixelArray = new int[bounds.width*bounds.height];
+        if (GnomeShellScreenshot.isSessionWaylandGnomeShell()) {
+            /* used on gnome shell on wayland */
+            int[] result = GnomeShellScreenshot.getRGBPixels(bounds, pixelArray);
+            if (result != null) {
+                return result;
+            }
+            /* fallback to existing method */
+        }
         getRGBPixelsImpl(xgc, bounds.x, bounds.y, bounds.width, bounds.height,
                             pixelArray, useGtk);
         return pixelArray;
