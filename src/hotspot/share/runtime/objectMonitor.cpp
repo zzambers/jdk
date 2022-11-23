@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1998, 2021, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1998, 2022, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -232,19 +232,6 @@ OopStorage* ObjectMonitor::_oop_storage = NULL;
 //
 // * See also http://blogs.sun.com/dave
 
-
-void* ObjectMonitor::operator new (size_t size) throw() {
-  return AllocateHeap(size, mtInternal);
-}
-void* ObjectMonitor::operator new[] (size_t size) throw() {
-  return operator new (size);
-}
-void ObjectMonitor::operator delete(void* p) {
-  FreeHeap(p);
-}
-void ObjectMonitor::operator delete[] (void *p) {
-  operator delete(p);
-}
 
 // Check that object() and set_object() are called from the right context:
 static void check_object_context() {
@@ -681,7 +668,7 @@ const char* ObjectMonitor::is_busy_to_string(stringStream* ss) {
   } else {
     // We report NULL instead of DEFLATER_MARKER here because is_busy()
     // ignores DEFLATER_MARKER values.
-    ss->print("owner=" INTPTR_FORMAT, NULL);
+    ss->print("owner=" INTPTR_FORMAT, NULL_WORD);
   }
   ss->print(", cxq=" INTPTR_FORMAT ", EntryList=" INTPTR_FORMAT, p2i(_cxq),
             p2i(_EntryList));

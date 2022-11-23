@@ -416,6 +416,13 @@ class LateInlineMHCallGenerator : public LateInlineCallGenerator {
 };
 
 bool LateInlineMHCallGenerator::do_late_inline_check(Compile* C, JVMState* jvms) {
+  // When inlining a virtual call, the null check at the call and the call itself can throw. These 2 paths have different
+  // expression stacks which causes late inlining to break. The MH invoker is not expected to be called from a method wih
+  // exception handlers. When there is no exception handler, GraphKit::builtin_throw() pops the stack which solves the issue
+  // of late inlining with exceptions.
+  assert(!jvms->method()->has_exception_handlers() ||
+         (method()->intrinsic_id() != vmIntrinsics::_linkToVirtual &&
+          method()->intrinsic_id() != vmIntrinsics::_linkToInterface), "no exception handler expected");
   // Even if inlining is not allowed, a virtual call can be strength-reduced to a direct call.
   bool allow_inline = C->inlining_incrementally();
   bool input_not_const = true;
@@ -519,12 +526,20 @@ bool LateInlineVirtualCallGenerator::do_late_inline_check(Compile* C, JVMState* 
   Node* receiver = jvms->map()->argument(jvms, 0);
   const Type* recv_type = C->initial_gvn()->type(receiver);
   if (recv_type->maybe_null()) {
+    if (C->print_inlining() || C->print_intrinsics()) {
+      C->print_inlining(method(), jvms->depth()-1, call_node()->jvms()->bci(),
+                        "late call devirtualization failed (receiver may be null)");
+    }
     return false;
   }
   // Even if inlining is not allowed, a virtual call can be strength-reduced to a direct call.
   bool allow_inline = C->inlining_incrementally();
   if (!allow_inline && _callee->holder()->is_interface()) {
     // Don't convert the interface call to a direct call guarded by an interface subtype check.
+    if (C->print_inlining() || C->print_intrinsics()) {
+      C->print_inlining(method(), jvms->depth()-1, call_node()->jvms()->bci(),
+                        "late call devirtualization failed (interface call)");
+    }
     return false;
   }
   CallGenerator* cg = C->call_generator(_callee,
@@ -1100,22 +1115,29 @@ CallGenerator* CallGenerator::for_method_handle_inline(JVMState* jvms, ciMethod*
       Node* receiver = kit.argument(0);
       if (receiver->Opcode() == Op_ConP) {
         input_not_const = false;
-        const TypeOopPtr* oop_ptr = receiver->bottom_type()->is_oopptr();
-        ciMethod* target = oop_ptr->const_oop()->as_method_handle()->get_vmtarget();
-        const int vtable_index = Method::invalid_vtable_index;
+        const TypeOopPtr* recv_toop = receiver->bottom_type()->isa_oopptr();
+        if (recv_toop != NULL) {
+          ciMethod* target = recv_toop->const_oop()->as_method_handle()->get_vmtarget();
+          const int vtable_index = Method::invalid_vtable_index;
 
-        if (!ciMethod::is_consistent_info(callee, target)) {
+          if (!ciMethod::is_consistent_info(callee, target)) {
+            print_inlining_failure(C, callee, jvms->depth() - 1, jvms->bci(),
+                                   "signatures mismatch");
+            return NULL;
+          }
+
+          CallGenerator *cg = C->call_generator(target, vtable_index,
+                                                false /* call_does_dispatch */,
+                                                jvms,
+                                                allow_inline,
+                                                PROB_ALWAYS);
+          return cg;
+        } else {
+          assert(receiver->bottom_type() == TypePtr::NULL_PTR, "not a null: %s",
+                 Type::str(receiver->bottom_type()));
           print_inlining_failure(C, callee, jvms->depth() - 1, jvms->bci(),
-                                 "signatures mismatch");
-          return NULL;
+                                 "receiver is always null");
         }
-
-        CallGenerator* cg = C->call_generator(target, vtable_index,
-                                              false /* call_does_dispatch */,
-                                              jvms,
-                                              allow_inline,
-                                              PROB_ALWAYS);
-        return cg;
       } else {
         print_inlining_failure(C, callee, jvms->depth() - 1, jvms->bci(),
                                "receiver not constant");

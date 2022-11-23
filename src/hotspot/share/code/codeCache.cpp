@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2021, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2022, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -487,7 +487,7 @@ CodeBlob* CodeCache::next_blob(CodeHeap* heap, CodeBlob* cb) {
  */
 CodeBlob* CodeCache::allocate(int size, int code_blob_type, bool handle_alloc_failure, int orig_code_blob_type) {
   // Possibly wakes up the sweeper thread.
-  NMethodSweeper::report_allocation(code_blob_type);
+  NMethodSweeper::report_allocation();
   assert_locked_or_safepoint(CodeCache_lock);
   assert(size > 0, "Code cache allocation request must be > 0 but is %d", size);
   if (size <= 0) {
@@ -512,7 +512,7 @@ CodeBlob* CodeCache::allocate(int size, int code_blob_type, bool handle_alloc_fa
         // Fallback solution: Try to store code in another code heap.
         // NonNMethod -> MethodNonProfiled -> MethodProfiled (-> MethodNonProfiled)
         // Note that in the sweeper, we check the reverse_free_ratio of the code heap
-        // and force stack scanning if less than 10% of the code heap are free.
+        // and force stack scanning if less than 10% of the entire code cache are free.
         int type = code_blob_type;
         switch (type) {
         case CodeBlobType::NonNMethod:
@@ -630,14 +630,23 @@ bool CodeCache::contains(nmethod *nm) {
   return contains((void *)nm);
 }
 
+static bool is_in_asgct() {
+  Thread* current_thread = Thread::current_or_null_safe();
+  return current_thread != NULL && current_thread->is_Java_thread() && current_thread->as_Java_thread()->in_asgct();
+}
+
 // This method is safe to call without holding the CodeCache_lock, as long as a dead CodeBlob is not
 // looked up (i.e., one that has been marked for deletion). It only depends on the _segmap to contain
 // valid indices, which it will always do, as long as the CodeBlob is not in the process of being recycled.
 CodeBlob* CodeCache::find_blob(void* start) {
   CodeBlob* result = find_blob_unsafe(start);
   // We could potentially look up non_entrant methods
-  guarantee(result == NULL || !result->is_zombie() || result->is_locked_by_vm() || VMError::is_error_reported(), "unsafe access to zombie method");
-  return result;
+  bool is_zombie = result != NULL && result->is_zombie();
+  bool is_result_safe = !is_zombie || result->is_locked_by_vm() || VMError::is_error_reported();
+  guarantee(is_result_safe || is_in_asgct(), "unsafe access to zombie method");
+  // When in ASGCT the previous gurantee will pass for a zombie method but we still don't want that code blob returned in order
+  // to minimize the chance of accessing dead memory
+  return is_result_safe ? result : NULL;
 }
 
 // Lookup that does not fail if you lookup a zombie method (if you call this, be sure to know
@@ -889,20 +898,17 @@ size_t CodeCache::max_capacity() {
   return max_cap;
 }
 
-/**
- * Returns the reverse free ratio. E.g., if 25% (1/4) of the code heap
- * is free, reverse_free_ratio() returns 4.
- */
-double CodeCache::reverse_free_ratio(int code_blob_type) {
-  CodeHeap* heap = get_code_heap(code_blob_type);
-  if (heap == NULL) {
-    return 0;
-  }
 
-  double unallocated_capacity = MAX2((double)heap->unallocated_capacity(), 1.0); // Avoid division by 0;
-  double max_capacity = (double)heap->max_capacity();
-  double result = max_capacity / unallocated_capacity;
-  assert (max_capacity >= unallocated_capacity, "Must be");
+// Returns the reverse free ratio. E.g., if 25% (1/4) of the code cache
+// is free, reverse_free_ratio() returns 4.
+// Since code heap for each type of code blobs falls forward to the next
+// type of code heap, return the reverse free ratio for the entire
+// code cache.
+double CodeCache::reverse_free_ratio() {
+  double unallocated = MAX2((double)unallocated_capacity(), 1.0); // Avoid division by 0;
+  double max = (double)max_capacity();
+  double result = max / unallocated;
+  assert (max >= unallocated, "Must be");
   assert (result >= 1.0, "reverse_free_ratio must be at least 1. It is %f", result);
   return result;
 }

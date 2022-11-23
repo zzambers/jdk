@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2021, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2022, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -2339,7 +2339,7 @@ C2V_VMENTRY_PREFIX(void, detachCurrentThread, (JNIEnv* env, jobject c2vm))
   }
 C2V_END
 
-C2V_VMENTRY_0(jlong, translate, (JNIEnv* env, jobject, jobject obj_handle))
+C2V_VMENTRY_0(jlong, translate, (JNIEnv* env, jobject, jobject obj_handle, jboolean callPostTranslation))
   requireJVMCINativeLibrary(JVMCI_CHECK_0);
   if (obj_handle == NULL) {
     return 0L;
@@ -2390,7 +2390,9 @@ C2V_VMENTRY_0(jlong, translate, (JNIEnv* env, jobject, jobject obj_handle))
       const char* cstring = name_string.is_null() ? NULL : thisEnv->as_utf8_string(name_string);
       // Create a new HotSpotNmethod instance in the peer runtime
       result = peerEnv->new_HotSpotNmethod(mh, cstring, isDefault, compileIdSnapshot, JVMCI_CHECK_0);
-      if (nm == NULL) {
+      if (result.is_null()) {
+        // exception occurred (e.g. OOME) creating a new HotSpotNmethod
+      } else if (nm == NULL) {
         // nmethod must have been unloaded
       } else {
         // Link the new HotSpotNmethod to the nmethod
@@ -2412,6 +2414,13 @@ C2V_VMENTRY_0(jlong, translate, (JNIEnv* env, jobject, jobject obj_handle))
   } else {
     JVMCI_THROW_MSG_0(IllegalArgumentException,
                 err_msg("Cannot translate object of type: %s", thisEnv->klass_name(obj)));
+  }
+  if (callPostTranslation) {
+    peerEnv->call_HotSpotJVMCIRuntime_postTranslation(result, JVMCI_CHECK_0);
+  }
+  // Propagate any exception that occurred while creating the translated object
+  if (peerEnv->transfer_pending_exception(thread, thisEnv)) {
+    return 0L;
   }
   return (jlong) peerEnv->make_global(result).as_jobject();
 }
@@ -2581,6 +2590,49 @@ C2V_VMENTRY(void, notifyCompilerInliningEvent, (JNIEnv* env, jobject, jint compi
   }
 }
 
+C2V_VMENTRY(void, setThreadLocalObject, (JNIEnv* env, jobject, jint id, jobject value))
+  requireInHotSpot("setThreadLocalObject", JVMCI_CHECK);
+  if (id == 0) {
+    thread->set_jvmci_reserved_oop0(JNIHandles::resolve(value));
+    return;
+  }
+  THROW_MSG(vmSymbols::java_lang_IllegalArgumentException(),
+            err_msg("%d is not a valid thread local id", id));
+}
+
+C2V_VMENTRY_NULL(jobject, getThreadLocalObject, (JNIEnv* env, jobject, jint id))
+  requireInHotSpot("getThreadLocalObject", JVMCI_CHECK_NULL);
+  if (id == 0) {
+    return JNIHandles::make_local(thread->get_jvmci_reserved_oop0());
+  }
+  THROW_MSG_0(vmSymbols::java_lang_IllegalArgumentException(),
+              err_msg("%d is not a valid thread local id", id));
+}
+
+C2V_VMENTRY(void, setThreadLocalLong, (JNIEnv* env, jobject, jint id, jlong value))
+  requireInHotSpot("setThreadLocalLong", JVMCI_CHECK);
+  if (id == 0) {
+    thread->set_jvmci_reserved0(value);
+  } else if (id == 1) {
+    thread->set_jvmci_reserved1(value);
+  } else {
+    THROW_MSG(vmSymbols::java_lang_IllegalArgumentException(),
+              err_msg("%d is not a valid thread local id", id));
+  }
+}
+
+C2V_VMENTRY_0(jlong, getThreadLocalLong, (JNIEnv* env, jobject, jint id))
+  requireInHotSpot("getThreadLocalLong", JVMCI_CHECK_0);
+  if (id == 0) {
+    return thread->get_jvmci_reserved0();
+  } else if (id == 1) {
+    return thread->get_jvmci_reserved1();
+  } else {
+    THROW_MSG_0(vmSymbols::java_lang_IllegalArgumentException(),
+                err_msg("%d is not a valid thread local id", id));
+  }
+}
+
 #define CC (char*)  /*cast a literal from (const char*)*/
 #define FN_PTR(f) CAST_FROM_FN_PTR(void*, &(c2v_ ## f))
 
@@ -2710,7 +2762,7 @@ JNINativeMethod CompilerToVM::methods[] = {
   {CC "getCurrentJavaThread",                         CC "()J",                                                                             FN_PTR(getCurrentJavaThread)},
   {CC "attachCurrentThread",                          CC "([BZ)Z",                                                                          FN_PTR(attachCurrentThread)},
   {CC "detachCurrentThread",                          CC "()V",                                                                             FN_PTR(detachCurrentThread)},
-  {CC "translate",                                    CC "(" OBJECT ")J",                                                                   FN_PTR(translate)},
+  {CC "translate",                                    CC "(" OBJECT "Z)J",                                                                  FN_PTR(translate)},
   {CC "unhand",                                       CC "(J)" OBJECT,                                                                      FN_PTR(unhand)},
   {CC "updateHotSpotNmethod",                         CC "(" HS_NMETHOD ")V",                                                               FN_PTR(updateHotSpotNmethod)},
   {CC "getCode",                                      CC "(" HS_INSTALLED_CODE ")[B",                                                       FN_PTR(getCode)},
@@ -2722,6 +2774,10 @@ JNINativeMethod CompilerToVM::methods[] = {
   {CC "addFailedSpeculation",                         CC "(J[B)Z",                                                                          FN_PTR(addFailedSpeculation)},
   {CC "callSystemExit",                               CC "(I)V",                                                                            FN_PTR(callSystemExit)},
   {CC "ticksNow",                                     CC "()J",                                                                             FN_PTR(ticksNow)},
+  {CC "getThreadLocalObject",                         CC "(I)" OBJECT,                                                                      FN_PTR(getThreadLocalObject)},
+  {CC "setThreadLocalObject",                         CC "(I" OBJECT ")V",                                                                  FN_PTR(setThreadLocalObject)},
+  {CC "getThreadLocalLong",                           CC "(I)J",                                                                            FN_PTR(getThreadLocalLong)},
+  {CC "setThreadLocalLong",                           CC "(IJ)V",                                                                           FN_PTR(setThreadLocalLong)},
   {CC "registerCompilerPhase",                        CC "(" STRING ")I",                                                                   FN_PTR(registerCompilerPhase)},
   {CC "notifyCompilerPhaseEvent",                     CC "(JIII)V",                                                                         FN_PTR(notifyCompilerPhaseEvent)},
   {CC "notifyCompilerInliningEvent",                  CC "(I" HS_RESOLVED_METHOD HS_RESOLVED_METHOD "ZLjava/lang/String;I)V",               FN_PTR(notifyCompilerInliningEvent)},

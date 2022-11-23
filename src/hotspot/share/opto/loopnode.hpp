@@ -777,6 +777,11 @@ public:
 
   void remove_main_post_loops(CountedLoopNode *cl, PhaseIdealLoop *phase);
 
+#ifdef ASSERT
+  // Tell whether the body contains nodes marked as reductions.
+  bool has_reduction_nodes() const;
+#endif // ASSERT
+
 #ifndef PRODUCT
   void dump_head() const;       // Dump loop head only
   void dump() const;            // Dump this loop recursively
@@ -1050,9 +1055,10 @@ private:
   Node **_idom;                  // Array of immediate dominators
   uint *_dom_depth;              // Used for fast LCA test
   GrowableArray<uint>* _dom_stk; // For recomputation of dom depth
+  LoopOptsMode _mode;
 
   // build the loop tree and perform any requested optimizations
-  void build_and_optimize(LoopOptsMode mode);
+  void build_and_optimize();
 
   // Dominators for the sea of nodes
   void Dominators();
@@ -1063,9 +1069,10 @@ private:
     _igvn(igvn),
     _verify_me(nullptr),
     _verify_only(false),
+    _mode(mode),
     _nodes_required(UINT_MAX) {
     assert(mode != LoopOptsVerify, "wrong constructor to verify IdealLoop");
-    build_and_optimize(mode);
+    build_and_optimize();
   }
 
 #ifndef PRODUCT
@@ -1076,8 +1083,9 @@ private:
     _igvn(igvn),
     _verify_me(verify_me),
     _verify_only(verify_me == nullptr),
+    _mode(LoopOptsVerify),
     _nodes_required(UINT_MAX) {
-    build_and_optimize(LoopOptsVerify);
+    build_and_optimize();
   }
 #endif
 

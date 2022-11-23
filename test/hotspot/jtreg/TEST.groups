@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2013, 2021, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2013, 2022, Oracle and/or its affiliates. All rights reserved.
 # DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
 #
 # This code is free software; you can redistribute it and/or modify it
@@ -94,11 +94,15 @@ hotspot_vector_2 = \
   compiler/vectorapi/VectorRebracket128Test.java \
   -compiler/intrinsics/string/TestStringLatin1IndexOfChar.java
 
+hotspot_compiler_arraycopy = \
+  compiler/arraycopy/stress
+
 tier1_common = \
   sanity/BasicVMTest.java \
   gtest/GTestWrapper.java \
   gtest/MetaspaceGtests.java \
-  gtest/LargePageGtests.java
+  gtest/LargePageGtests.java \
+  gtest/NMTGtests.java \
 
 tier1_compiler = \
   :tier1_compiler_1 \
@@ -114,7 +118,9 @@ hotspot_not_fast_compiler = \
 hotspot_slow_compiler = \
   compiler/codegen/aes \
   compiler/codecache/stress \
-  compiler/gcbarriers/PreserveFPRegistersTest.java
+  compiler/gcbarriers/PreserveFPRegistersTest.java \
+  resourcehogs/compiler \
+  :hotspot_compiler_arraycopy
 
 tier1_compiler_1 = \
   compiler/arraycopy/ \
@@ -131,6 +137,7 @@ tier1_compiler_1 = \
   -compiler/c2/Test6792161.java \
   -compiler/c2/Test6603011.java \
   -compiler/c2/Test6912517.java \
+  -:hotspot_slow_compiler
 
 tier1_compiler_2 = \
   compiler/classUnloading/ \
@@ -352,7 +359,6 @@ tier1_runtime = \
  -runtime/modules/LoadUnloadModuleStress.java \
  -runtime/modules/ModuleStress/ExportModuleStressTest.java \
  -runtime/modules/ModuleStress/ModuleStressGC.java \
- -runtime/NMT \
  -runtime/ReservedStack \
  -runtime/SelectionResolution/AbstractMethodErrorTest.java \
  -runtime/SelectionResolution/IllegalAccessErrorTest.java \
@@ -403,6 +409,7 @@ hotspot_appcds_dynamic = \
  -runtime/cds/appcds/LambdaEagerInit.java \
  -runtime/cds/appcds/LambdaProxyClasslist.java \
  -runtime/cds/appcds/LambdaVerificationFailedDuringDump.java \
+ -runtime/cds/appcds/LambdaWithUseImplMethodHandle.java \
  -runtime/cds/appcds/LambdaWithOldClass.java \
  -runtime/cds/appcds/LongClassListPath.java \
  -runtime/cds/appcds/LotsOfClasses.java \
@@ -548,7 +555,8 @@ hotspot_runtime_minimalvm = \
   runtime/logging
 
 hotspot_nmt = \
-  runtime/NMT
+  runtime/NMT \
+  gtest/NMTGtests.java
 
 hotspot_rest_runtime = \
   :hotspot_runtime \
