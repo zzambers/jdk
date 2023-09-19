@@ -430,10 +430,22 @@ public class StoreReproducibilityTest {
         } catch (DateTimeParseException pe) {
             throw new RuntimeException("Unexpected date " + dateComment + " in stored properties " + destFile, pe);
         }
-        if (!parsedDate.after(date)) {
+        if (!parsedDate.after(date) && !dateStringBroken()) {
             throw new RuntimeException("Expected date comment " + dateComment + " to be after " + date
                     + " but was " + parsedDate);
         }
+    }
+
+    /*
+     * Checks if converting Date to String and back works for current timezone.
+     * It may be broken for some timezones due to ambiguous zone abbreviations,
+     * resulting in unequal Date.
+     */
+    static boolean dateStringBroken() {
+        Date date = new Date();
+        Instant instant = Instant.from(FORMATTER.parse(date.toString()));
+        // Date as String has one second precission, so there is 1000 ms tolerance
+        return Math.abs(date.getTime() - instant.toEpochMilli()) > 1000;
     }
 
     // returns the "Nth" comment from the file. Comment index starts from 1.
