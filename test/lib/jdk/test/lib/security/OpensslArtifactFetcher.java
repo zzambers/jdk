@@ -96,8 +96,8 @@ public class OpensslArtifactFetcher {
     }
 
     private static String getDefaultSystemOpensslPath(String version) {
-        if (verifyOpensslVersion("openssl", version)) {
-            return "openssl";
+        if (verifyOpensslVersion("/usr/bin/openssl", version)) {
+            return "/usr/bin/openssl";
         } else if (verifyOpensslVersion("/usr/local/bin/openssl", version)) {
             return "/usr/local/bin/openssl";
         }
